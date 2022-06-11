@@ -1,22 +1,26 @@
 /*
-Control a fixture/led strip over wifi and artnet wizardry. This is... all over the place, but i deployed this a lot and used it for 3 live shows now... eh well ya know
-Read the script, its not long. seriously just read it. 
-I sorta want FastLED to force anything that doesnt fit in the current universe just to jam it in the next. Let's say you connect 2m of 144 LEDs/m RGB things. The first 1m should pop
-in universe 0 and the second m should just go into universe 1. This makes it a LOT more easy to address this in different tools. Jinx is a particular annoying beast.
+This uses FastLED and ArtnetWifi to use an ESP8266 NodeMCU to connect to a WiFi near you (edit credentials) and be able to receive DMX over ArtNet. 
+This was build of some example online, but I forgot where it was. I will add some credits, whenever I find it back!
+
+There is some logic to bounce between SSIDs, so you can collaborate with people and also have it connect to either your closed off IoT WiFi network (please, just do not think about putting this into the internet. Please.) or your debugging network.
+You need to connect the D6 pin of the ESP8266 to the data line of your LED Strip (WS2812 or whatever, you can also change it) and also connect the ground to all the other grounds. How you provide power to the ESP8266 is up to you :) I like step-downs and decent PSUs, but I also use this to have ArtNet Nodes for raves and light installations.
 */
 #include <ArtnetWifi.h>
 #include <Arduino.h>
 #include <FastLED.h>
+#define FASTLED_ESP8266_NODEMCU_PIN_ORDER
 
 // Wifi settings
-const char* ssid = "";
-const char* password = "";
+const char* ssid1 = "";
+const char* ssid2 = "";
+const char* password1 = "";
+const char* password2 = "";
 
 // LED settings
-const int fixtures = 1; // fixture count and also total of universes
+const int fixtures = 2; // fixture count and also total of universes
 const int numLeds = 144 * fixtures; // LEDs per fixture - here u need to fiddle with it a lot. 144 LEDs per fixture will put each fixture in a new universe. - we hope...
 const int numberOfChannels = numLeds * 3; // Total number of channels you want to receive (1 led = 3 channels)
-const byte dataPin = 4;
+const byte dataPin = 6;
 
 const int bufferLeds = floor((512 - numberOfChannels / 3));
 
@@ -30,12 +34,45 @@ bool universesReceived[maxUniverses];
 bool sendFrame = 1;
 int previousDataLength = 0;
 
+// search SSIDs that are baked in
+int searchForSsid()
+{
+  Serial.print("Scan start ... ");
+  Serial.print("We will prioritize first WiFi! Second WiFi is a backup and dev mode!");
+  int n = WiFi.scanNetworks();
+  Serial.print(n);
+  int targetSsidIndex = 0;
+  Serial.println(" network(s) found");
+  for (int i = 0; i < n; i++)
+  {
+    Serial.println(WiFi.SSID(i));
+    if (WiFi.SSID(i) == "your first wifi ssid") {
+      targetSsidIndex = i;
+    } else if (WiFi.SSID(i) == "your second wifi ssid" && targetSsidIndex == 0) {
+      targetSsidIndex = i;  
+    }
+  }
+  Serial.println();
+  Serial.println(targetSsidIndex);
+
+  delay(5000);
+
+  return targetSsidIndex;
+}
 
 // connect to wifi – returns true if successful or false if not
 bool ConnectWifi(void)
 {
   bool state = true;
   int i = 0;
+  String password = "";
+  String ssid = WiFi.SSID(searchForSsid());
+  if (ssid == ssid1) {
+    password = password1;
+  }
+  if (ssid == ssid2) {
+    password = password2;
+  }
 
   WiFi.begin(ssid, password);
   Serial.println("");
@@ -138,7 +175,7 @@ void setup()
   Serial.begin(115200);
   ConnectWifi();
   artnet.begin();
-  FastLED.addLeds<WS2813, dataPin, RGB>(leds, numLeds);
+  FastLED.addLeds<WS2813, dataPin, GRB>(leds, numLeds);
   initTest();
 
   // this will be called for each packet received
